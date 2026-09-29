@@ -1,0 +1,29 @@
+# Xem file hoàn chỉnh tại ./config/config.example.yml
+bots:
+  # Hướng dẫn cài bot ở phía dưới
+proxies:
+  # Hướng dẫn cài proxies ở phía dưới
+webhooks:
+  test_webhook:
+    url: "http://gpt.x/api/mb/payment"
+    token: "3BQoyrM7Rj82FfvwssF8DkDjvysb9RMPSLFMdHrpqEJYke5UzYb8Nae3TyCPFagf"
+    conditions:
+      content_regex: "CICIKEY[0-9]{12}"
+      account_regex: ".*?"
+  # Hướng dẫn cài webhook ở phía dưới
+gateways:
+  mb_bank_1:
+    type: "MBBANK"
+    password: "Ndq0202@@@" 
+    account: "0342234522"
+    login_id: "0342234522"
+    repeat_interval_in_sec: 20
+  # vcb_bank_1:
+  #   type: 'VCBBANK'
+  #   password: 'bank password'
+  #   account: 'stk nhan tien'
+  #   login_id: 'ten dang nhap'
+  #   device_id: 'huong dan lay phia duoi'
+  #   repeat_interval_in_sec: 20
+  #   proxy: 'proxy_1'
+

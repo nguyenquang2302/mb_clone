@@ -1,0 +1,31 @@
+version: '3'
+volumes:
+  redis-data:
+    driver: local
+services:
+  app:
+    image: registry.gitlab.com/nhayhoc/payment-service
+    volumes:
+      - ./.docker/config/config.yml:/app/config/config.yml
+    ports:
+      - 3000:3000
+    depends_on:
+      - redis
+      - captcha-resolver
+    environment:
+      - PORT=3000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CAPTCHA_API_BASE_URL=https://bank-captcha.payment.com.vn
+      # If want self-hosted captcha server, edit CAPTCHA_API_BASE_URL to your service
+      # CAPTCHA_API_BASE_URL to http://captcha-resolver:1234
+      
+      # If need config for webhook telegram, where DOMAIN Telegram will make HTTP Post
+      # SERVICE_DOMAIN=
+  redis:
+    image: redis:6.2-alpine
+    volumes:
+      - redis-data:/data
+  # If want self-hosted captcha server, remove comment
+  # captcha-resolver:
+  #  image: registry.gitlab.com/nhayhoc/bank-captcha-server
