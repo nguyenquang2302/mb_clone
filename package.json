@@ -28,7 +28,7 @@
   "funding": "https://nhantien.momo.vn/0888929537",
   "homepage": "https://mb-bank.vercel.app",
   "dependencies": {
-    "dotenv": "^18.0.4",
+    "dotenv": "^18.0.10",
     "jimp": "^0.22.10",
     "mbbank": "^1.8.10",
     "moment": "^2.29.4",

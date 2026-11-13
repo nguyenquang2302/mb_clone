@@ -1,26 +1,30 @@
 import MB from "./MB";
-import fs from "fs";
-import path from "path";
+import "dotenv/config";
 
 // ======================================================
 // CẤU HÌNH LARAVEL
 // ======================================================
 
 const laravelPaymentUrl =
+    process.env.LARAVEL_MB_PAYMENT_URL ||
     "http://gpt.x/api/mb/payment";
 
 const laravelSecret =
-    "key";
+    process.env.LARAVEL_MB_PAYMENT_SECRET || "";
 
 // ======================================================
 // CẤU HÌNH MB BANK
 // ======================================================
 
-const username = "0342234522";
-const password = "Ndq0202@@";
+const username = process.env.MB_USERNAME || "";
+const password = process.env.MB_PASSWORD || "";
 
 if (!username || !password) {
-    throw new Error("Thiếu username hoặc password");
+    throw new Error("Thiếu MB_USERNAME hoặc MB_PASSWORD");
+}
+
+if (!laravelSecret) {
+    throw new Error("Thiếu LARAVEL_MB_PAYMENT_SECRET");
 }
 
 // ======================================================
@@ -38,84 +42,12 @@ const mb = new MB({
 
 const CHECK_INTERVAL = 30 * 1000;
 
-// File lưu các refNo đã xử lý thành công
-const processedFile = path.join(
-    process.cwd(),
-    "processed_refs.json"
-);
-
-// ======================================================
-// LOAD REFNO ĐÃ XỬ LÝ
-// ======================================================
-
-function loadProcessedRefs(): Set<string> {
-    try {
-        if (!fs.existsSync(processedFile)) {
-            return new Set();
-        }
-
-        const data = fs.readFileSync(
-            processedFile,
-            "utf8"
-        );
-
-        const refs = JSON.parse(data);
-
-        if (!Array.isArray(refs)) {
-            return new Set();
-        }
-
-        return new Set(
-            refs.filter(
-                (ref): ref is string =>
-                    typeof ref === "string"
-            )
-        );
-    } catch (error) {
-        console.error(
-            "⚠️ Không đọc được processed_refs.json:",
-            error
-        );
-
-        return new Set();
-    }
-}
-
-const processedRefs = loadProcessedRefs();
-
-console.log(
-    `💾 Đã load ${processedRefs.size} refNo đã xử lý`
-);
-
-// ======================================================
-// SAVE REFNO
-// ======================================================
-
-function saveProcessedRefs(): void {
-    try {
-        fs.writeFileSync(
-            processedFile,
-            JSON.stringify(
-                Array.from(processedRefs),
-                null,
-                2
-            ),
-            "utf8"
-        );
-    } catch (error) {
-        console.error(
-            "❌ Không thể lưu processed_refs.json:",
-            error
-        );
-    }
-}
-
 // ======================================================
 // SLEEP
 // ======================================================
 
 function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
         setTimeout(resolve, ms);
     });
 }
@@ -128,21 +60,15 @@ function sleep(ms: number): Promise<void> {
 function getToday(): string {
     const now = new Date();
 
-    const day = String(
-        now.getDate()
-    ).padStart(2, "0");
-
-    const month = String(
-        now.getMonth() + 1
-    ).padStart(2, "0");
-
+    const day = String(now.getDate()).padStart(2, "0");
+    const month = String(now.getMonth() + 1).padStart(2, "0");
     const year = now.getFullYear();
 
     return `${day}/${month}/${year}`;
 }
 
 // ======================================================
-// GỬI PAYMENT SANG LARAVEL
+// GỬI GIAO DỊCH SANG LARAVEL
 // ======================================================
 
 async function sendPaymentToLaravel(
@@ -150,28 +76,28 @@ async function sendPaymentToLaravel(
     orderCode: string
 ): Promise<boolean> {
 
-    const amount = Number(
-        tx.creditAmount ?? 0
+    const amount = Number(tx.creditAmount ?? 0);
+
+    const content = String(
+        tx.transactionDesc ?? ""
     );
 
-    const content =
-        tx.transactionDesc ?? "";
+    const refNo = String(
+        tx.refNo ?? ""
+    ).trim();
 
-    const refNo =
-        tx.refNo ?? null;
-
+    // Không có mã giao dịch thì không thể chống trùng an toàn
     if (!refNo) {
         console.log(
-            "⚠️ Giao dịch không có refNo, bỏ qua"
+            "⚠️ Giao dịch không có refNo, bỏ qua để tránh ghi trùng."
         );
 
         return false;
     }
 
-    if (amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
         console.log(
-            `⚠️ ${refNo} số tiền không hợp lệ:`,
-            amount
+            `⚠️ ${refNo} số tiền không hợp lệ: ${amount}`
         );
 
         return false;
@@ -179,10 +105,10 @@ async function sendPaymentToLaravel(
 
     console.log("");
     console.log("========================================");
-    console.log("📤 GỬI PAYMENT SANG LARAVEL");
+    console.log("📤 GỬI GIAO DỊCH SANG LARAVEL");
     console.log("========================================");
 
-    console.log("Order:", orderCode);
+    console.log("Order:", orderCode || "Chưa có mã đơn");
     console.log("Amount:", amount);
     console.log("RefNo:", refNo);
     console.log("Content:", content);
@@ -194,14 +120,9 @@ async function sendPaymentToLaravel(
                 method: "POST",
 
                 headers: {
-                    "Content-Type":
-                        "application/json",
-
-                    "Accept":
-                        "application/json",
-
-                    "Authorization":
-                        `Bearer ${laravelSecret}`,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "Authorization": `Bearer ${laravelSecret}`,
                 },
 
                 body: JSON.stringify({
@@ -212,10 +133,12 @@ async function sendPaymentToLaravel(
 
                         date:
                             tx.transactionDate ??
-                            new Date().toISOString(),
+                            null,
 
                         account_receiver:
-                            tx.accountNumber ?? null,
+                            tx.accountNumber ??
+                            tx.toAccountNumber ??
+                            null,
 
                         gate: "MBBANK",
                     },
@@ -223,8 +146,7 @@ async function sendPaymentToLaravel(
             }
         );
 
-        const responseText =
-            await response.text();
+        const responseText = await response.text();
 
         console.log(
             `📡 Laravel HTTP ${response.status}`
@@ -243,14 +165,54 @@ async function sendPaymentToLaravel(
             return false;
         }
 
+        let result: any;
+
+        try {
+            result = JSON.parse(responseText);
+        } catch {
+            console.error(
+                "❌ Laravel trả về JSON không hợp lệ"
+            );
+
+            return false;
+        }
+
+        if (result.success !== true) {
+            console.error(
+                "❌ Laravel chưa xử lý thành công"
+            );
+
+            return false;
+        }
+
+        // Phải đọc result.status, không phải result.result
+        const acceptedStatuses = [
+            "paid",
+            "duplicate",
+            "already_paid",
+            "mismatch",
+            "cancelled_order",
+            "unmatched",
+            "already_recorded",
+        ];
+
+        if (!acceptedStatuses.includes(result.status)) {
+            console.log(
+                "⚠️ Trạng thái Laravel chưa được nhận diện:",
+                result.status
+            );
+
+            return false;
+        }
+
         console.log(
-            "✅ Laravel đã nhận giao dịch"
+            "✅ Laravel đã xử lý giao dịch:",
+            result.status
         );
 
         return true;
 
     } catch (error) {
-
         console.error(
             "❌ Không kết nối được Laravel:",
             error
@@ -264,59 +226,48 @@ async function sendPaymentToLaravel(
 // LẤY GIAO DỊCH HÔM NAY
 // ======================================================
 
-async function getTodayTransactions() {
+async function getTodayTransactions(): Promise<any[]> {
 
-    const balance =
-        await mb.getBalance();
+    const balance = await mb.getBalance();
 
-    if (
-        !balance?.balances?.length
-    ) {
+    if (!balance?.balances?.length) {
         throw new Error(
             "Không lấy được danh sách tài khoản MB"
         );
     }
 
-    const today =
-        getToday();
+    const today = getToday();
 
     const result: any[] = [];
 
-    for (
-        const account of balance.balances
-    ) {
+    for (const account of balance.balances) {
 
         if (!account.number) {
             continue;
         }
 
         try {
+            console.log(
+                `🔍 Đang lấy giao dịch tài khoản ${account.number}`
+            );
 
             const transactions =
                 await mb.getTransactionsHistory({
-                    accountNumber:
-                        account.number,
-
-                    fromDate:
-                        today,
-
-                    toDate:
-                        today,
+                    accountNumber: account.number,
+                    fromDate: today,
+                    toDate: today,
                 });
 
-            for (
-                const tx of transactions ?? []
-            ) {
+            for (const tx of transactions ?? []) {
 
                 result.push({
-                    accountNumber:
-                        account.number,
+                    accountNumber: account.number,
 
                     transactionDate:
-                        tx.transactionDate,
+                        tx.transactionDate ?? null,
 
                     postDate:
-                        tx.postDate,
+                        tx.postDate ?? null,
 
                     creditAmount:
                         tx.creditAmount ?? null,
@@ -325,33 +276,26 @@ async function getTodayTransactions() {
                         tx.debitAmount ?? null,
 
                     balanceAvailable:
-                        tx.balanceAvailable ??
-                        null,
+                        tx.balanceAvailable ?? null,
 
                     transactionDesc:
-                        tx.transactionDesc ??
-                        "",
+                        tx.transactionDesc ?? "",
 
                     toAccountName:
-                        tx.toAccountName ??
-                        null,
+                        tx.toAccountName ?? null,
 
                     toAccountNumber:
-                        tx.toAccountNumber ??
-                        null,
+                        tx.toAccountNumber ?? null,
 
                     toBank:
-                        tx.toBank ??
-                        null,
+                        tx.toBank ?? null,
 
                     refNo:
-                        tx.refNo ??
-                        null,
+                        tx.refNo ?? null,
                 });
             }
 
         } catch (error) {
-
             console.error(
                 `❌ Lỗi lấy giao dịch ${account.number}:`,
                 error
@@ -370,110 +314,62 @@ async function processTransactions(
     transactions: any[]
 ): Promise<void> {
 
-    for (
-        const tx of transactions
-    ) {
+    for (const tx of transactions) {
 
-        const content =
-            tx.transactionDesc ?? "";
+        // Chỉ nhận giao dịch tiền vào
+        const amount = Number(
+            tx.creditAmount ?? 0
+        );
 
-        const refNo =
-            tx.refNo ?? null;
+        if (!Number.isFinite(amount) || amount <= 0) {
+            continue;
+        }
 
-        // ----------------------------------------------
-        // Không có refNo
-        // ----------------------------------------------
+        const content = String(
+            tx.transactionDesc ?? ""
+        );
+
+        const refNo = String(
+            tx.refNo ?? ""
+        ).trim();
 
         if (!refNo) {
-            continue;
-        }
-
-        // ----------------------------------------------
-        // ĐÃ XỬ LÝ
-        // ----------------------------------------------
-
-        if (
-            processedRefs.has(refNo)
-        ) {
-            continue;
-        }
-
-        // ----------------------------------------------
-        // TÌM CICIKEY
-        // ----------------------------------------------
-
-        const match =
-            content.match(
-                /CICIKEY([0-9]{12})/
+            console.log(
+                "⚠️ Giao dịch không có refNo, bỏ qua."
             );
 
-        if (!match) {
             continue;
         }
 
-        const orderCode =
-            match[1];
+        // Tìm mã CICI nếu có
+        const match = content.match(
+            /CICI([0-9]{12})/i
+        );
 
-        const amount =
-            Number(
-                tx.creditAmount ?? 0
-            );
+        const orderCode = match
+            ? `CICI${match[1]}`.toUpperCase()
+            : "";
 
         console.log("");
-        console.log(
-            "🔔 PHÁT HIỆN GIAO DỊCH CICIKEY"
-        );
+        console.log("========================================");
+        console.log("🔔 PHÁT HIỆN GIAO DỊCH TIỀN VÀO");
+        console.log("========================================");
 
         console.log(
             "Order:",
+            orderCode || "Chưa có mã đơn"
+        );
+
+        console.log("Amount:", amount);
+        console.log("RefNo:", refNo);
+        console.log("Content:", content);
+
+        // Gửi tất cả giao dịch tiền vào sang Laravel
+        // Laravel tự kiểm tra mã đơn và chống trùng
+        await sendPaymentToLaravel(
+            tx,
             orderCode
         );
-
-        console.log(
-            "Amount:",
-            amount
-        );
-
-        console.log(
-            "RefNo:",
-            refNo
-        );
-
-        console.log(
-            "Content:",
-            content
-        );
-
-        // ----------------------------------------------
-        // GỬI LARAVEL
-        // ----------------------------------------------
-
-        const success =
-            await sendPaymentToLaravel(
-                tx,
-                orderCode
-            );
-
-        // ----------------------------------------------
-        // CHỈ ĐÁNH DẤU KHI LARAVEL THÀNH CÔNG
-        // ----------------------------------------------
-
-        if (success) {
-
-            processedRefs.add(refNo);
-
-            saveProcessedRefs();
-
-            console.log(
-                `💾 Đã lưu refNo: ${refNo}`
-            );
-
-        } else {
-
-            console.log(
-                `⚠️ Chưa đánh dấu ${refNo}, lần sau sẽ thử lại`
-            );
-        }
     }
 }
 
@@ -484,22 +380,15 @@ async function processTransactions(
 async function runOnce(): Promise<void> {
 
     console.log("");
-    console.log(
-        "========================================"
-    );
+    console.log("========================================");
 
     console.log(
-        `🚀 Kiểm tra MB: ${new Date().toLocaleString(
-            "vi-VN"
-        )}`
+        `🚀 Kiểm tra MB: ${new Date().toLocaleString("vi-VN")}`
     );
 
-    console.log(
-        "========================================"
-    );
+    console.log("========================================");
 
     try {
-
         const transactions =
             await getTodayTransactions();
 
@@ -507,12 +396,9 @@ async function runOnce(): Promise<void> {
             `📜 Tìm thấy ${transactions.length} giao dịch`
         );
 
-        await processTransactions(
-            transactions
-        );
+        await processTransactions(transactions);
 
     } catch (error) {
-
         console.error(
             "❌ Lỗi vòng kiểm tra:",
             error
@@ -527,9 +413,7 @@ async function runOnce(): Promise<void> {
 async function loop(): Promise<void> {
 
     console.log("");
-    console.log(
-        "========================================"
-    );
+    console.log("========================================");
 
     console.log(
         "🏦 CICI MB PAYMENT SERVICE"
@@ -540,25 +424,19 @@ async function loop(): Promise<void> {
     );
 
     console.log(
-        `💾 Ref đã xử lý: ${processedRefs.size}`
+        "📦 Chống trùng: Laravel Database"
     );
 
-    console.log(
-        "========================================"
-    );
+    console.log("========================================");
 
     while (true) {
 
         await runOnce();
 
         console.log("");
-        console.log(
-            "⏳ Chờ 30 giây..."
-        );
+        console.log("⏳ Chờ 30 giây...");
 
-        await sleep(
-            CHECK_INTERVAL
-        );
+        await sleep(CHECK_INTERVAL);
     }
 }
 
@@ -566,7 +444,7 @@ async function loop(): Promise<void> {
 // START
 // ======================================================
 
-loop().catch((error) => {
+loop().catch(error => {
 
     console.error(
         "❌ FATAL ERROR:",
